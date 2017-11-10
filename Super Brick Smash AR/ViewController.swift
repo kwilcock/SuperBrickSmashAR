@@ -24,10 +24,14 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         sceneView.showsStatistics = true
         
         // Create a new scene
-        let scene = SCNScene(named: "art.scnassets/ship.scn")!
-        
+        let scene = SCNScene()
+        addTapGestureToSceneView()
         // Set the scene to the view
         sceneView.scene = scene
+        
+        self.sceneView.autoenablesDefaultLighting = true
+        self.sceneView.automaticallyUpdatesLighting = true
+ 
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -35,7 +39,6 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         
         // Create a session configuration
         let configuration = ARWorldTrackingConfiguration()
-
         // Run the view's session
         sceneView.session.run(configuration)
     }
@@ -76,5 +79,47 @@ class ViewController: UIViewController, ARSCNViewDelegate {
     func sessionInterruptionEnded(_ session: ARSession) {
         // Reset tracking and/or remove existing anchors if consistent tracking is required
         
+    }
+    func addTapGestureToSceneView() {
+        let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(ViewController.didTap(withGestureRecognizer:)))
+        sceneView.addGestureRecognizer(tapGestureRecognizer)
+    }
+
+    
+    @objc func didTap(withGestureRecognizer recognizer: UIGestureRecognizer) {
+        let tapLocation = recognizer.location(in: sceneView)
+        let hitTestResults = sceneView.hitTest(tapLocation)
+        guard let node = hitTestResults.first?.node else {
+            let hitTestResultsWithFeaturePoints = sceneView.hitTest(tapLocation, types: .estimatedHorizontalPlane)
+            if let hitTestResultWithFeaturePoints = hitTestResultsWithFeaturePoints.first {
+                let translation = hitTestResultWithFeaturePoints.worldTransform.translation
+                createWall(x: translation.x, y: translation.y, z: translation.z)
+            }
+            return
+        }
+        node.removeFromParentNode()
+    }
+    func createCube(x: Float, y: Float, z: Float, height: Float, width: Float, length: Float){
+        let boxGeometry = SCNBox(width: CGFloat(width), height: CGFloat(height), length: CGFloat(length), chamferRadius: 0)
+        let boxNode = SCNNode(geometry: boxGeometry)
+        boxNode.position = SCNVector3(x, y, z)
+        sceneView.scene.rootNode.addChildNode(boxNode)
+    }
+    func createWall(x: Float, y: Float, z: Float){
+        var startingX = x - 0.1
+        for _ in 1...2 {
+            var startingY = y
+            for _ in 1...3 {
+                createCube(x: startingX, y: startingY, z: z, height: 0.1, width: 0.1, length: 0.1)
+                startingY += 0.1
+            }
+            startingX += 0.1
+        }
+    }
+}
+extension float4x4 {
+    var translation: float3 {
+        let translation = self.columns.3
+        return float3(translation.x, translation.y, translation.z)
     }
 }
