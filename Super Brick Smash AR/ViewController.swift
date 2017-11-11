@@ -1,19 +1,18 @@
-//
-//  ViewController.swift
-//  Super Brick Smash AR
-//
-//  Created by Karl Wilcock on 11/10/17.
-//  Copyright © 2017 Karl Wilcock. All rights reserved.
-//
-
 import UIKit
 import SceneKit
 import ARKit
 
-class ViewController: UIViewController, ARSCNViewDelegate {
-
+class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDelegate {
+    struct CollisionCategory: OptionSet {
+        let rawValue: Int
+        
+        static let bullet  = CollisionCategory(rawValue: 1 << 0)
+        static let wall = CollisionCategory(rawValue: 1 << 1)
+    }
+    
     @IBOutlet var sceneView: ARSCNView!
     var isWallPlaced = false
+    var planes: [String : SCNNode] = [:]
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -28,6 +27,9 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         addTapGestureToSceneView()
         // Set the scene to the view
         sceneView.scene = scene
+        sceneView.scene.physicsWorld.contactDelegate = self
+        
+        sceneView.scene.physicsWorld.gravity = SCNVector3(0, -2.8, 0)
         
         self.sceneView.autoenablesDefaultLighting = true
         self.sceneView.automaticallyUpdatesLighting = true
@@ -38,6 +40,7 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         
         // Create a session configuration
         let configuration = ARWorldTrackingConfiguration()
+        configuration.planeDetection = .horizontal
         // Run the view's session
         sceneView.session.run(configuration)
     }
@@ -53,17 +56,17 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         super.didReceiveMemoryWarning()
         // Release any cached data, images, etc that aren't in use.
     }
-
+    
     // MARK: - ARSCNViewDelegate
     
-/*
-    // Override to create and configure nodes for anchors added to the view's session.
-    func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
-        let node = SCNNode()
+    /*
+     // Override to create and configure nodes for anchors added to the view's session.
+     func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
+     let node = SCNNode()
      
-        return node
-    }
-*/
+     return node
+     }
+     */
     
     func session(_ session: ARSession, didFailWithError error: Error) {
         // Present an error message to the user
@@ -84,6 +87,53 @@ class ViewController: UIViewController, ARSCNViewDelegate {
             DispatchQueue.main.async {
                 self.createWall(node: node)
             }
+        } else {
+            let planeAnchor = anchor as? ARPlaneAnchor
+            let plane = SCNBox(width: CGFloat((planeAnchor?.extent.x)!), height: 0.005, length: CGFloat((planeAnchor?.extent.z)!), chamferRadius: 0)
+            let color = SCNMaterial()
+            color.diffuse.contents = UIColor(red: 0, green: 0, blue: 1, alpha: 0.1)
+            plane.materials = [color]
+            let planeNode = SCNNode(geometry: plane)
+            planeNode.position = SCNVector3Make((planeAnchor?.center.x)!, -0.005, (planeAnchor?.center.z)!)
+            let body = SCNPhysicsBody(type: .static, shape: SCNPhysicsShape(geometry: plane, options: nil))
+            body.restitution = 0.0
+            body.friction = 1.0
+            planeNode.physicsBody = body
+            node.addChildNode(planeNode)
+            let key = planeAnchor?.identifier.uuidString
+            self.planes[key!] = planeNode
+        }
+    }
+    
+    func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
+        guard let planeAnchor = anchor as? ARPlaneAnchor else { return }
+        
+        let key = planeAnchor.identifier.uuidString
+        if let existingPlane = self.planes[key] {
+            if let geo = existingPlane.geometry as? SCNBox {
+                geo.width = CGFloat(planeAnchor.extent.x)
+                geo.length = CGFloat(planeAnchor.extent.z)
+            }
+            existingPlane.position = SCNVector3Make(planeAnchor.center.x, -0.005, planeAnchor.center.z)
+        }
+    }
+    
+    func renderer(_ renderer: SCNSceneRenderer, didRemove node: SCNNode, for anchor: ARAnchor) {
+        guard let planeAnchor = anchor as? ARPlaneAnchor else { return }
+        
+        let key = planeAnchor.identifier.uuidString
+        if let existingPlane = self.planes[key] {
+            existingPlane.removeFromParentNode()
+            self.planes.removeValue(forKey: key)
+        }
+    }
+    
+    func physicsWorld(_ world: SCNPhysicsWorld, didBegin contact: SCNPhysicsContact) {
+        if (contact.nodeA.name == "bullet") {
+            contact.nodeB.removeFromParentNode()
+        }
+        if (contact.nodeB.name == "bullet") {
+            contact.nodeA.removeFromParentNode()
         }
     }
     
@@ -98,8 +148,8 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         if (isWallPlaced) {
             let rotate = simd_float4x4(SCNMatrix4MakeRotation(sceneView.session.currentFrame!.camera.eulerAngles.y, 0, 1, 0))
             var translation = matrix_identity_float4x4
-            translation.columns.3.z = -1.5
-            translation.columns.3.y = 0.5
+            translation.columns.3.z = -2
+            translation.columns.3.y = 0.2
             let finalTransform = simd_mul(rotate, translation)
             print(finalTransform.columns.3)
             let sphereNode = sceneView.pointOfView?.childNode(withName: "bullet", recursively: false)
@@ -120,44 +170,39 @@ class ViewController: UIViewController, ARSCNViewDelegate {
             }
             return
         }
-        node.removeFromParentNode()
+        //        node.removeFromParentNode()
     }
     func createSphere(x: Float, y: Float, z: Float) {
         let sphereGeometry = SCNSphere(radius: 0.01)
         let sphereNode = SCNNode(geometry: sphereGeometry)
         sphereNode.position = SCNVector3(x, y, z)
         sphereNode.name = "bullet"
-        //        sphereNode.physicsBody?.velocity = SCNVector3(2, 0, 0);
+        let physicsBody = SCNPhysicsBody(type: .dynamic, shape: SCNPhysicsShape(geometry: sphereGeometry, options: nil))
+        physicsBody.mass = 1.25
+        physicsBody.restitution = 0.25
+        physicsBody.friction = 0.75
+        physicsBody.categoryBitMask = CollisionCategory.bullet.rawValue
+        physicsBody.contactTestBitMask = CollisionCategory.wall.rawValue
+        sphereNode.physicsBody = physicsBody
         sceneView.pointOfView?.addChildNode(sphereNode)
-        
     }
-    func createBullet(node:SCNNode) {
-        let sphereGeometry = SCNSphere(radius: 0.01)
-        let sphereNode = SCNNode(geometry: sphereGeometry)
-        sphereNode.position = SCNVector3(0.0, -0.04, 0.0)
-        sphereNode.name = "bullet"
-        let force = SCNVector3(x: 0, y: 0, z: -1)
-        //            let position = SCNVector3(x: 0, y: 0, z: 0)
-        sceneView.scene.rootNode.addChildNode(sphereNode)
-        sphereNode.physicsBody = SCNPhysicsBody(type: .dynamic, shape: nil)
-        sphereNode.physicsBody?.applyForce(force, asImpulse: true)
-    }
+    
     func createCube(node: SCNNode, x: Float, y: Float, height: Float, width: Float, length: Float){
         let boxGeometry = SCNBox(width: CGFloat(width), height: CGFloat(height), length: CGFloat(length), chamferRadius: 0)
-        let material = SCNMaterial()
-        material.diffuse.contents = UIImage(named: "texture.jpg")
-        boxGeometry.materials = [material]
         let boxNode = SCNNode(geometry: boxGeometry)
         boxNode.position = SCNVector3(x, y, 0)
-        boxNode.physicsBody = SCNPhysicsBody(type: .static, shape: nil)
+        let physicsBody = SCNPhysicsBody(type: .static, shape: nil)
+        physicsBody.categoryBitMask = CollisionCategory.wall.rawValue
+        physicsBody.contactTestBitMask = CollisionCategory.bullet.rawValue
+        boxNode.physicsBody = physicsBody
         node.addChildNode(boxNode)
     }
     
     func createWall(node: SCNNode){
         var startingX = -0.1
-        for _ in 1...6 {
+        for _ in 1...12 {
             var startingY = 0.0
-            for _ in 1...4 {
+            for _ in 1...8 {
                 createCube(node: node, x: Float(startingX), y: Float(startingY), height: 0.1, width: 0.1, length: 0.1)
                 startingY += 0.1
             }
@@ -172,3 +217,4 @@ extension float4x4 {
         return float3(translation.x, translation.y, translation.z)
     }
 }
+
