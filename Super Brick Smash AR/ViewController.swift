@@ -31,7 +31,6 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         
         self.sceneView.autoenablesDefaultLighting = true
         self.sceneView.automaticallyUpdatesLighting = true
- 
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -68,7 +67,6 @@ class ViewController: UIViewController, ARSCNViewDelegate {
     
     func session(_ session: ARSession, didFailWithError error: Error) {
         // Present an error message to the user
-        
     }
     
     func sessionWasInterrupted(_ session: ARSession) {
@@ -80,11 +78,19 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         // Reset tracking and/or remove existing anchors if consistent tracking is required
         
     }
+    
+    func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
+        if !anchor.isKind(of: ARPlaneAnchor.self) {
+            DispatchQueue.main.async {
+                self.createWall(node: node)
+            }
+        }
+    }
+    
     func addTapGestureToSceneView() {
         let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(ViewController.didTap(withGestureRecognizer:)))
         sceneView.addGestureRecognizer(tapGestureRecognizer)
     }
-
     
     @objc func didTap(withGestureRecognizer recognizer: UIGestureRecognizer) {
         let tapLocation = recognizer.location(in: sceneView)
@@ -92,31 +98,35 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         guard let node = hitTestResults.first?.node else {
             let hitTestResultsWithFeaturePoints = sceneView.hitTest(tapLocation, types: .estimatedHorizontalPlane)
             if let hitTestResultWithFeaturePoints = hitTestResultsWithFeaturePoints.first {
-                let translation = hitTestResultWithFeaturePoints.worldTransform.translation
-                createWall(x: translation.x, y: translation.y, z: translation.z)
+                let rotate = simd_float4x4(SCNMatrix4MakeRotation(sceneView.session.currentFrame!.camera.eulerAngles.y, 0, 1, 0))
+                let finalTransform = simd_mul(hitTestResultWithFeaturePoints.worldTransform, rotate)
+                sceneView.session.add(anchor: ARAnchor(transform: finalTransform))
             }
             return
         }
         node.removeFromParentNode()
     }
-    func createCube(x: Float, y: Float, z: Float, height: Float, width: Float, length: Float){
+    
+    func createCube(node: SCNNode, x: Float, y: Float, height: Float, width: Float, length: Float){
         let boxGeometry = SCNBox(width: CGFloat(width), height: CGFloat(height), length: CGFloat(length), chamferRadius: 0)
         let boxNode = SCNNode(geometry: boxGeometry)
-        boxNode.position = SCNVector3(x, y, z)
-        sceneView.scene.rootNode.addChildNode(boxNode)
+        boxNode.position = SCNVector3(x, y, 0)
+        node.addChildNode(boxNode)
     }
-    func createWall(x: Float, y: Float, z: Float){
-        var startingX = x - 0.1
+    
+    func createWall(node: SCNNode){
+        var startingX = -0.1
         for _ in 1...2 {
-            var startingY = y
+            var startingY = 0.0
             for _ in 1...3 {
-                createCube(x: startingX, y: startingY, z: z, height: 0.1, width: 0.1, length: 0.1)
+                createCube(node: node, x: Float(startingX), y: Float(startingY), height: 0.1, width: 0.1, length: 0.1)
                 startingY += 0.1
             }
             startingX += 0.1
         }
     }
 }
+
 extension float4x4 {
     var translation: float3 {
         let translation = self.columns.3
