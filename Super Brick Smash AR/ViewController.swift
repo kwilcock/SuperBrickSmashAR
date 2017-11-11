@@ -13,9 +13,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
     @IBOutlet var sceneView: ARSCNView!
     var isWallPlaced = false
     var planes: [String : SCNNode] = [:]
+    var timer = Timer()
+    var allBricks = [SCNNode]()
     override func viewDidLoad() {
         super.viewDidLoad()
-        
         // Set the view's delegate
         sceneView.delegate = self
         
@@ -33,6 +34,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
         
         self.sceneView.autoenablesDefaultLighting = true
         self.sceneView.automaticallyUpdatesLighting = true
+        timer = Timer.scheduledTimer(timeInterval: 5, target: self,   selector: (#selector(ViewController.updateTimer)), userInfo: nil, repeats: true)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -51,10 +53,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
         // Pause the view's session
         sceneView.session.pause()
     }
-    
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         // Release any cached data, images, etc that aren't in use.
+    }
+    @objc func updateTimer() {
+        if (isWallPlaced) {
+            let brick = allBricks[Int(arc4random_uniform(96))]
+            let color = SCNMaterial()
+            color.diffuse.contents = UIColor(red: 0, green: 0, blue: 1, alpha: 1)
+            brick.geometry?.materials = [color]
+            brick.name = "active"
+        }
     }
     
     // MARK: - ARSCNViewDelegate
@@ -82,6 +92,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
         
     }
     
+
     func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
         if !anchor.isKind(of: ARPlaneAnchor.self) {
             DispatchQueue.main.async {
@@ -132,7 +143,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
         if (contact.nodeA.name == "bullet") {
             contact.nodeB.removeFromParentNode()
         }
-        if (contact.nodeB.name == "bullet") {
+        if (contact.nodeB.name == "bullet" && contact.nodeA.name == "active") {
             contact.nodeA.removeFromParentNode()
         }
     }
@@ -151,7 +162,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
             translation.columns.3.z = -2
             translation.columns.3.y = 0.2
             let finalTransform = simd_mul(rotate, translation)
-            print(finalTransform.columns.3)
             let sphereNode = sceneView.pointOfView?.childNode(withName: "bullet", recursively: false)
             let force = SCNVector3(x: finalTransform.columns.3.x, y: finalTransform.columns.3.y, z: finalTransform.columns.3.z)
             sphereNode?.physicsBody = SCNPhysicsBody(type: .dynamic, shape: nil)
@@ -190,11 +200,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
     func createCube(node: SCNNode, x: Float, y: Float, height: Float, width: Float, length: Float){
         let boxGeometry = SCNBox(width: CGFloat(width), height: CGFloat(height), length: CGFloat(length), chamferRadius: 0)
         let boxNode = SCNNode(geometry: boxGeometry)
+        
         boxNode.position = SCNVector3(x, y, 0)
         let physicsBody = SCNPhysicsBody(type: .static, shape: nil)
         physicsBody.categoryBitMask = CollisionCategory.wall.rawValue
         physicsBody.contactTestBitMask = CollisionCategory.bullet.rawValue
         boxNode.physicsBody = physicsBody
+        allBricks.append(boxNode)
         node.addChildNode(boxNode)
     }
     
