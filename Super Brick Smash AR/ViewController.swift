@@ -59,9 +59,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
     }
     @objc func updateTimer() {
         if (isWallPlaced) {
-            let brick = allBricks[Int(arc4random_uniform(96))]
+            let brick = allBricks[Int(arc4random_uniform(80))]
             let color = SCNMaterial()
-            color.diffuse.contents = UIColor(red: 0, green: 0, blue: 1, alpha: 1)
+            color.diffuse.contents = UIColor(red: 1, green: 0, blue: 0, alpha: 0.6)
             brick.geometry?.materials = [color]
             brick.name = "active"
         }
@@ -157,32 +157,31 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
         let tapLocation = recognizer.location(in: sceneView)
         let hitTestResults = sceneView.hitTest(tapLocation)
         if (isWallPlaced) {
-            let rotate = simd_float4x4(SCNMatrix4MakeRotation(sceneView.session.currentFrame!.camera.eulerAngles.y, 0, 1, 0))
+            let rotateX = simd_float4x4(SCNMatrix4MakeRotation(sceneView.session.currentFrame!.camera.eulerAngles.y, 0, 1, 0))
             var translation = matrix_identity_float4x4
-            translation.columns.3.z = -2
-            translation.columns.3.y = 0.2
-            let finalTransform = simd_mul(rotate, translation)
-            let sphereNode = sceneView.pointOfView?.childNode(withName: "bullet", recursively: false)
-            let force = SCNVector3(x: finalTransform.columns.3.x, y: finalTransform.columns.3.y, z: finalTransform.columns.3.z)
-            sphereNode?.physicsBody = SCNPhysicsBody(type: .dynamic, shape: nil)
-            sphereNode?.physicsBody?.applyForce(force, asImpulse: true)
+            translation.columns.3.z = -3.5
+            let firstTransform = simd_mul(rotateX, translation)
+            let rotateY = simd_float4x4(SCNMatrix4MakeRotation(sceneView.session.currentFrame!.camera.eulerAngles.x, 1, 0, 0))
+            let secondTransform = simd_mul(rotateY, translation)
+            let sphereNode = createSphere(x: 0, y: -0.04, z: -0.1)
+            let force = SCNVector3(x: firstTransform.columns.3.x, y: secondTransform.columns.3.y, z: firstTransform.columns.3.z)
+            sphereNode.physicsBody = SCNPhysicsBody(type: .dynamic, shape: nil)
+            sphereNode.physicsBody?.applyForce(force, asImpulse: true)
         }
-        guard let node = hitTestResults.first?.node else {
+        guard let _ = hitTestResults.first?.node else {
             let hitTestResultsWithFeaturePoints = sceneView.hitTest(tapLocation, types: .estimatedHorizontalPlane)
             if let hitTestResultWithFeaturePoints = hitTestResultsWithFeaturePoints.first {
                 if (!isWallPlaced) {
                     let rotate = simd_float4x4(SCNMatrix4MakeRotation(sceneView.session.currentFrame!.camera.eulerAngles.y, 0, 1, 0))
                     let finalTransform = simd_mul(hitTestResultWithFeaturePoints.worldTransform, rotate)
                     sceneView.session.add(anchor: ARAnchor(transform: finalTransform))
-                    createSphere(x: 0, y: -0.04, z: -0.1)
                     isWallPlaced = true
                 }
             }
             return
         }
-        //        node.removeFromParentNode()
     }
-    func createSphere(x: Float, y: Float, z: Float) {
+    func createSphere(x: Float, y: Float, z: Float) -> SCNNode {
         let sphereGeometry = SCNSphere(radius: 0.01)
         let sphereNode = SCNNode(geometry: sphereGeometry)
         sphereNode.position = SCNVector3(x, y, z)
@@ -195,30 +194,35 @@ class ViewController: UIViewController, ARSCNViewDelegate, SCNPhysicsContactDele
         physicsBody.contactTestBitMask = CollisionCategory.wall.rawValue
         sphereNode.physicsBody = physicsBody
         sceneView.pointOfView?.addChildNode(sphereNode)
+        return sphereNode
     }
     
-    func createCube(node: SCNNode, x: Float, y: Float, height: Float, width: Float, length: Float){
-        let boxGeometry = SCNBox(width: CGFloat(width), height: CGFloat(height), length: CGFloat(length), chamferRadius: 0)
-        let boxNode = SCNNode(geometry: boxGeometry)
-        
-        boxNode.position = SCNVector3(x, y, 0)
+    func createCube(node: SCNNode, x: Float, y: Float){
+        var nodeModel:SCNNode!
+        let nodeName = "glassbrick"
         let physicsBody = SCNPhysicsBody(type: .static, shape: nil)
         physicsBody.categoryBitMask = CollisionCategory.wall.rawValue
         physicsBody.contactTestBitMask = CollisionCategory.bullet.rawValue
-        boxNode.physicsBody = physicsBody
-        allBricks.append(boxNode)
-        node.addChildNode(boxNode)
+        let modelScene = SCNScene(named: "art.scnassets/glassbrick.dae")!
+        nodeModel =  modelScene.rootNode.childNode(withName: nodeName, recursively: true)
+        nodeModel.position = SCNVector3(x, y, 0)
+        nodeModel.scale = SCNVector3(0.05, 0.1, 0.05)
+        nodeModel.physicsBody = physicsBody
+        allBricks.append(nodeModel)
+        node.addChildNode(nodeModel)
     }
     
     func createWall(node: SCNNode){
-        var startingX = -0.1
-        for _ in 1...12 {
+        let scaleX = 2.0
+        let scaleY = 2.0
+        var startingX = -0.1 * 6 * scaleX
+        for _ in 1...9 {
             var startingY = 0.0
-            for _ in 1...8 {
-                createCube(node: node, x: Float(startingX), y: Float(startingY), height: 0.1, width: 0.1, length: 0.1)
-                startingY += 0.1
+            for _ in 1...11 {
+                createCube(node: node, x: Float(startingX), y: Float(startingY))
+                startingY += 0.05 * scaleY
             }
-            startingX += 0.1
+            startingX += 0.1 * scaleX
         }
     }
 }
